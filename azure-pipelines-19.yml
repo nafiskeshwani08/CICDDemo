@@ -1,0 +1,67 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+pool:
+  name: Default
+
+steps:
+- script: echo Hello, world!
+  displayName: 'Run a one-line script'
+
+- script: |
+    echo Add other tasks to build, test, and deploy your project.
+    echo See https://aka.ms/yaml
+  displayName: 'Run a multi-line script'
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+      $headers.Add("Content-Type", "text/plain")
+      
+      $ExportFileName = "exportbots"+(Get-Random -Maximum 100)
+      
+      $body = @"
+      {
+        `"username`": `"nafis.keshwani`",
+        `"password`": `"Automation@123`"
+      }
+      "@
+      
+      $response = Invoke-RestMethod 'https://aa-saleseng-us-4sbx.cloud.automationanywhere.digital/v2/authentication' -Method 'POST' -Headers $headers -Body $body
+      $response.token | ConvertTo-Json
+      
+      
+      $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+      $headers.Add("X-Authorization", $response.token)
+      $headers.Add("Content-Type", "text/plain")
+      
+      $body = @"
+      {
+        `"name`": $ExportFileName,
+        `"files`": [
+          {
+            `"id`": 136972,
+            `"version`": 1
+          }
+        ],
+        `"packageIds`": [
+          0
+        ],
+        `"targetControlRoom`": {
+          `"url`": `"https://aa-saleseng-use-2.my.automationanywhere.digital/`",
+          `"username`": `"nafis.keshwani`",
+          `"apiKey`": `"i0ZHk1A87N0Q2ktjn71Q}S``JbksB<tpQ8_kfxr?0`",
+          `"skipExistingFiles`": true
+        },
+        `"label`": `"PRODUCTION`"
+      }
+      "@
+      
+      $response = Invoke-RestMethod 'https://aa-saleseng-us-4sbx.cloud.automationanywhere.digital/v2/blm/promoteBot' -Method 'POST' -Headers $headers -Body $body
+      $response | ConvertTo-Json
