@@ -1,0 +1,104 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+pool:
+  name: Default
+
+
+steps:
+- script: echo Hello, world!
+  displayName: 'Run a one-line script'
+
+- script: |
+    echo Add other tasks to build, test, and deploy your project.
+    echo See https://aka.ms/yaml
+  displayName: 'Run a multi-line script'
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      # 1. Setup your Variables 
+      # (In Azure DevOps, consider using $env:VARIABLE_NAME for security)
+      $SourceUri      = "https://aa-saleseng-us-4sbx.cloud.automationanywhere.digital"
+      $TargetUri      = "https://aa-saleseng-use-2.my.automationanywhere.digital"
+      $SourceUser     = "nafis.keshwani" # Fill this or use $env:SourceUser
+      $SourcePassword = "Automation@123" # Fill this or use $env:SourcePassword
+      $TargetUser     = "nafis.keshwani" # Fill this or use $env:TargetUser
+      $TargetApiKey   = "h2{ZXUUmvByt19=TQYB08{8:q9HXKZZ9Jx=]LJ3~" # Fill this or use $env:TargetApiKey
+      
+      $BotID          = 101170203
+      $PromoteUri     = "${SourceUri}/v2/blm/promoteBot"
+      
+      Write-Host "--- Starting Promotion Process ---"
+      
+      # 2. Authenticate with Source Control Room
+      $AuthBody = @{ 
+          "username" = $SourceUser 
+          "password" = $SourcePassword 
+      } | ConvertTo-Json
+      
+      try {
+          $AuthResponse = Invoke-RestMethod -Uri "$SourceUri/v2/authentication" -Method Post -Body $AuthBody -ContentType "application/json"
+          Write-Host "Successfully authenticated with Source CR."
+      } catch {
+          Write-Error "Authentication Failed: $($_.Exception.Message)"
+          exit 1
+      }
+      
+      # 3. Build the Promotion JSON Body
+      # We use Depth 10 to ensure the nested 'targetControlRoom' object is converted correctly
+      $PromotionBody = @{
+          "name"                = "PromoteBot_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+          "files"               = @(
+              @{
+                  "id"      = $BotID
+                  "version" = 1
+              }
+          )
+          "includeDependencies" = $true
+          "packageIds"          = @(0) 
+          "targetControlRoom"   = @{
+              "url"               = $TargetUri
+              "username"          = $TargetUser
+              "apiKey"            = $TargetApiKey
+              "skipExistingFiles" = $false
+          }
+          "label"               = "PRODUCTION"
+      } | ConvertTo-Json -Depth 10
+      
+      # 4. Execute the Promotion Call
+      # Note: We ONLY call the Source URI. The Source CR handles the push to the Target CR.
+      $Header = @{ "X-Authorization" = $AuthResponse.token }
+      
+      try {
+          Write-Host "Requesting promotion for Bot ID: $BotID to $TargetUri..."
+          
+          $Result = Invoke-RestMethod -Uri $PromoteUri -Method Post -Headers $Header -Body $PromotionBody -ContentType "application/json"
+          
+          if ($null -ne $Result.requestId) {
+              Write-Host "SUCCESS: Promotion triggered!" -ForegroundColor Green
+              Write-Host "Request ID: $($Result.requestId)"
+          } else {
+              Write-Warning "Promotion triggered, but no Request ID was returned."
+              Write-Host "Full Response: $($Result | ConvertTo-Json)"
+          }
+      }
+      catch {
+          Write-Error "Promotion Request Failed: $($_.Exception.Message)"
+          
+          # Extract detailed error message from Automation Anywhere if available
+          if ($_.Exception.Response) {
+              $Reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+              $ErrorDetails = $Reader.ReadToEnd()
+              Write-Host "Server Response Details: $ErrorDetails" -ForegroundColor Red
+          }
+          exit 1 # Forces Azure DevOps Pipeline to show as 'Failed'
+      }
+      
+      Write-Host "--- Script Completed ---"
+    pwsh: true
